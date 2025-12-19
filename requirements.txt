@@ -1,0 +1,6 @@
+gradio==4.44.0
+faster-whisper==1.0.3
+gTTS==2.5.3
+soundfile==0.12.1
+requests==2.32.3
+python-dotenv==1.0.1
