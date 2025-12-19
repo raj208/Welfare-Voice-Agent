@@ -2,6 +2,8 @@ import json
 import re
 from llm_backends import ollama_chat
 from tools.eligibility import check_eligibility
+from tools.application_store import save_application
+
 
 # Step-3 Retriever (safe import)
 try:
@@ -32,6 +34,26 @@ def normalize_hi(t: str) -> str:
     t = t.replace("बिहाड", "बिहार")
 
     return t
+
+def parse_choice(text: str, max_n: int):
+    t = normalize_hi(text).strip()
+
+    # digits: "1", "2", "3"
+    m = re.search(r"\b([1-9])\b", t)
+    if m:
+        v = int(m.group(1))
+        return v if 1 <= v <= max_n else None
+
+    # Hindi words
+    if "पहला" in t or "एक" == t:
+        return 1 if max_n >= 1 else None
+    if "दूसरा" in t or "दो" == t:
+        return 2 if max_n >= 2 else None
+    if "तीसरा" in t or "तीन" == t:
+        return 3 if max_n >= 3 else None
+
+    return None
+
 
 
 HINDI_NUM_WORDS = {
@@ -207,16 +229,17 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
     memory.setdefault("pending_confirm", None)
     memory.setdefault("expected_field", None)
     memory.setdefault("goal", None)
-    memory.setdefault("last_results", None)
+    memory.setdefault("last_results", None)       # ranked = [(r,e,tag), ...]
+    memory.setdefault("selected_scheme", None)
 
     profile = memory["profile"]
     user_text = normalize_hi(user_text)
 
-    # store initial goal
+    # store initial goal early (only during intake/collection)
     if memory["goal"] is None and memory["stage"] in ["INTAKE", "PROFILE_COLLECTION"]:
         memory["goal"] = user_text
 
-    # 1) pending confirm
+    # 1) pending confirm has highest priority
     if memory["pending_confirm"]:
         pc = memory["pending_confirm"]
         t = user_text.lower()
@@ -229,10 +252,73 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
             return ("ठीक है, मैं पहले वाला मान ही रखूँगा।", memory)
         return ("कृपया सिर्फ 'हाँ' या 'नहीं' में बताइए।", memory)
 
+    # ------------------------------------------------------------------
+    # STEP-5: selection + submit flow (stage handlers)
+    # ------------------------------------------------------------------
+
+    # If user already submitted, still allow picking another scheme
+    if memory.get("stage") == "DONE":
+        memory["stage"] = "RECOMMEND"  # reuse the same handler
+
+    # --- Handle submit confirmation stage ---
+    if memory.get("stage") == "CONFIRM_SUBMIT":
+        memory["expected_field"] = None  # prevent profile prompts here
+        yn = parse_yes_no(user_text)
+        if yn is None:
+            return ("क्या आप आवेदन सबमिट करना चाहते हैं? (हाँ/नहीं)", memory)
+
+        if yn is False:
+            memory["stage"] = "RECOMMEND"
+            return ("ठीक है। आप किस योजना की जानकारी चाहते हैं? (1/2/3)", memory)
+
+        selected = memory.get("selected_scheme")
+        if not selected:
+            memory["stage"] = "RECOMMEND"
+            return ("मुझे आपकी चुनी हुई योजना नहीं मिल रही। कृपया 1/2/3 चुनिए।", memory)
+
+        tracking_id = save_application(profile, selected)
+        memory["stage"] = "DONE"
+        return (
+            f"✅ आपका आवेदन सबमिट कर दिया गया है। ट्रैकिंग आईडी: {tracking_id}\n"
+            "आप चाहें तो दूसरी योजना भी देख सकते हैं (1/2/3)।",
+            memory
+        )
+
+    # --- Handle scheme selection stage ---
+    if memory.get("stage") == "RECOMMEND":
+        memory["expected_field"] = None  # prevent profile prompts here
+
+        ranked = memory.get("last_results")  # [(r,e,tag), ...]
+        if not ranked:
+            # if nothing stored, fall back to recompute recommendations
+            memory["stage"] = "READY"
+        else:
+            choice = parse_choice(user_text, max_n=min(3, len(ranked)))
+            if choice is None:
+                return ("कृपया 1/2/3 में से चुनिए।", memory)
+
+            r, e, tag = ranked[choice - 1]
+            memory["selected_scheme"] = r
+            memory["stage"] = "CONFIRM_SUBMIT"
+
+            docs = r.get("documents_hi", [])
+            docs_text = " , ".join(docs) if docs else "दस्तावेज़ जानकारी उपलब्ध नहीं"
+
+            reply = (
+                f"{r['name_hi']}\n"
+                f"- कैसे आवेदन करें: {r.get('apply_hi','जानकारी उपलब्ध नहीं')}\n"
+                f"- जरूरी दस्तावेज़: {docs_text}\n\n"
+                "क्या आप इस योजना के लिए आवेदन सबमिट करना चाहते हैं? (हाँ/नहीं)"
+            )
+            return (reply, memory)
+
+    # ------------------------------------------------------------------
+    # PROFILE COLLECTION (deterministic parsing)
+    # ------------------------------------------------------------------
+
     extracted = {}
     ef = memory.get("expected_field")
 
-    # 2) deterministic parse ONLY for expected field
     if ef == "state":
         v = parse_state(user_text)
         if v: extracted["state"] = v
@@ -252,15 +338,14 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
         v = parse_gender(user_text)
         if v: extracted["gender"] = v
 
-    # ✅ If expected field still not parsed, ask again (NO LLM fallback)
+    # If expected field not parsed, ask again (NO LLM fallback)
     if not extracted and ef is not None:
         return (ask_for_field(ef), memory)
 
-    # 3) Only if ef is None, allow LLM extraction (validated hard)
+    # If ef is None, allow optional LLM extraction (validated hard)
     if not extracted and ef is None:
         llm_data = llm_extract_profile(user_text, lang_name) or {}
 
-        # validate & normalize
         if "state" in llm_data:
             st = parse_state(str(llm_data["state"]))
             if st: extracted["state"] = st
@@ -286,26 +371,31 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
             if c:
                 extracted["category"] = c
 
-    # 4) contradiction check
+    # Contradiction check
     for k, v in extracted.items():
         if k in profile and profile[k] != v:
             memory["pending_confirm"] = {"field": k, "old": profile[k], "new": v}
-            return (f"आपने पहले {field_label(k)} {profile[k]} बताया था, अभी {v} कहा। क्या मैं {v} अपडेट कर दूँ? (हाँ/नहीं)", memory)
+            return (
+                f"आपने पहले {field_label(k)} {profile[k]} बताया था, अभी {v} कहा। "
+                f"क्या मैं {v} अपडेट कर दूँ? (हाँ/नहीं)",
+                memory
+            )
 
-    # 5) apply updates
     profile.update(extracted)
 
-    # 6) stage transition
+    # stage transition
     if memory["stage"] == "INTAKE":
         memory["stage"] = "PROFILE_COLLECTION"
 
-    # 7) ask required fields
+    # ask required fields
     missing = [f for f in REQUIRED_FIELDS if f not in profile]
     if missing:
         memory["expected_field"] = missing[0]
         return (ask_for_field(missing[0]), memory)
 
-    # 8) recommend
+    # ------------------------------------------------------------------
+    # RECOMMENDATION
+    # ------------------------------------------------------------------
     memory["stage"] = "READY"
     memory["expected_field"] = None
 
