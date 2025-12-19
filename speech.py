@@ -8,9 +8,9 @@ _MODEL_SIZE = os.getenv("WHISPER_MODEL", "small")
 _whisper = WhisperModel(_MODEL_SIZE, device="cpu", compute_type="int8")
 
 def transcribe_audio(audio_path: str, language_code: str) -> str:
-    """
-    language_code examples: hi, bn, ta, te, mr, or, gu...
-    """
+    if not audio_path:        # ✅ handles None / empty
+        return ""
+
     segments, info = _whisper.transcribe(
         audio_path,
         language=language_code,
@@ -18,6 +18,7 @@ def transcribe_audio(audio_path: str, language_code: str) -> str:
     )
     text = " ".join([seg.text.strip() for seg in segments]).strip()
     return text
+
 
 def tts_to_file(text: str, language_code: str) -> str:
     """
