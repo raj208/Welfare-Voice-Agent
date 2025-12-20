@@ -101,3 +101,37 @@ It may also ask **only when needed by eligibility rules**:
 ---
 
 
+## 🚀 Installation & Setup
+
+### Prerequisites
+* Python 3.9+
+* [cite_start]FFmpeg (required for audio processing via faster-whisper) [cite: 91]
+
+### 1. Clone the repository
+```bash```
+git clone [https://github.com/yourusername/voice-welfare-agent.git](https://github.com/yourusername/voice-welfare-agent.git)
+cd voice-welfare-agent
+
+
+### 2. Create a Virtual Environment
+
+# Windows
+```bash```
+python -m venv .venv
+.venv\Scripts\activate
+
+# macOS/Linux
+```bash```
+python3 -m venv .venv
+source .venv/bin/activate
+
+
+
+### 3. Install Dependencies
+```bash```
+pip install -r requirements.txt
+
+
+### 4. Run the Application
+```bash```
+python app.py
