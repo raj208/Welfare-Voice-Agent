@@ -30,7 +30,7 @@ Unlike simple chatbots, this system operates as an **autonomous agent** with a d
 
 ---
 
-## ✅ Implemented Features (only what exists)
+## ✅ Implemented Features
 
 ### Voice + Multilingual UI
 - Mic recording input via Gradio
