@@ -1,6 +1,16 @@
-# Voice Welfare Agent (Hindi) — Voice-First Agentic Welfare Scheme Assistant
+# Voice Welfare Agent (Hindi) 🇮🇳
 
-A voice-first, agentic AI assistant that converses in **Hindi**, collects a minimal user profile, **retrieves relevant welfare schemes**, runs a **rule-based eligibility check**, and supports a simple **apply + submit flow** with a tracking ID. Built to demonstrate an **explicit agent lifecycle (state machine)**, **tool usage**, **memory across turns**, **contradiction handling**, and **failure handling**.
+**A Voice-First, Agentic AI Assistant for Government Welfare Schemes**
+
+[![Language](https://img.shields.io/badge/Language-Hindi-orange)](https://github.com/)
+[![Tech Stack](https://img.shields.io/badge/Stack-Gradio%20|%20Faster--Whisper%20|%20Python-blue)](https://github.com/)
+[![Status](https://img.shields.io/badge/Status-Prototype-green)](https://github.com/)
+
+## 📖 Overview
+
+[cite_start]The **Voice Welfare Agent** is a voice-first AI system designed to help users find and apply for government welfare schemes entirely through a native Indian language (Hindi)[cite: 3].
+
+[cite_start]Unlike simple chatbots, this system operates as an **autonomous agent** with a deterministic state machine[cite: 29]. [cite_start]It listens to user queries, manages conversation memory across turns, actively detects contradictions in user inputs, and utilizes external tools to retrieve schemes, check eligibility rules, and simulate application submissions[cite: 4, 5].
 
 ---
 
