@@ -5,19 +5,34 @@ from tools.eligibility import check_eligibility
 from tools.application_store import save_application
 
 
+
+
+def _trace_reset(memory: dict):
+    memory["turn_trace"] = []  # per-turn
+    return memory["turn_trace"]
+
+def _trace_finalize(memory: dict):
+    memory["last_trace"] = " → ".join(memory.get("turn_trace", []))
+
+
 # Step-3 Retriever (safe import)
 try:
     from tools.retriever import search_schemes
 except Exception:
     search_schemes = None
 
-REQUIRED_FIELDS = ["state", "age", "annual_income", "category"]
+
+
+# REQUIRED_FIELDS = ["state", "age", "annual_income", "category"]
+REQUIRED_FIELDS = ["state", "age", "annual_income", "category", "is_student", "gender"]
 ALLOWED_CATEGORIES = {"sc", "st", "obc", "general", "ews"}
 
 # ----------------------------
 # Normalization (STT fixes)
 # ----------------------------
 def normalize_hi(t: str) -> str:
+    t = t.replace(",", "").replace("₹", "")
+
     t = (t or "").strip()
 
     # lakh STT variants
@@ -219,6 +234,88 @@ def rewrite_query(q: str) -> str:
         return "छात्रवृत्ति NSP स्कॉलरशिप"
     return q
 
+
+def canonical_fallback_for_expected_field(user_text: str, ef: str, lang_name: str):
+    """
+    If deterministic parse failed, try LLM forced-choice mapping.
+    Returns a dict like {"gender": "female"} or {} if unsure.
+    """
+    if ef == "gender":
+        res = llm_classify_enum(user_text, "gender", ["male", "female"], lang_name)
+        if res["confidence"] >= 0.5 and res["value"]:
+            return {"gender": res["value"]}
+
+    if ef == "category":
+        res = llm_classify_enum(user_text, "category", ["SC", "ST", "OBC", "General", "EWS"], lang_name)
+        if res["confidence"] >= 0.6 and res["value"]:
+            return {"category": res["value"]}
+
+    if ef == "is_student":
+        res = llm_classify_enum(user_text, "is_student", [True, False], lang_name)
+        if res["confidence"] >= 0.6 and (res["value"] is True or res["value"] is False):
+            return {"is_student": res["value"]}
+
+    # For choice(1/2/3) we handle in RECOMMEND stage (below), not here.
+    return {}
+
+
+
+def llm_classify_enum(text: str, field: str, options, lang_name: str):
+    """
+    Forced-choice classification to canonical values.
+    Returns: {"value": <one of options> or None, "confidence": float 0..1}
+    """
+    sys = (
+        "You are a strict classifier.\n"
+        "Return ONLY valid JSON, no extra text.\n"
+        'Schema: {"value": <one of OPTIONS or null>, "confidence": <number between 0 and 1>}\n'
+        "If unsure, set value=null and confidence<0.6.\n"
+    )
+
+    # Add field-specific hints (helps a LOT for noisy Hindi STT)
+    hint = ""
+    if field == "gender":
+        hint = 'Hints: male synonyms: "पुरुष","लड़का","आदमी". female synonyms: "महिला","लड़की","औरत".\n'
+    elif field == "category":
+        hint = (
+            'Hints: SC synonyms: "एससी","दलित". ST synonyms: "एसटी","जनजाति". '
+            'OBC synonyms: "ओबीसी","पिछड़ा". General synonyms: "जनरल","सामान्य". '
+            'EWS synonyms: "ईडब्ल्यूएस".\n'
+        )
+    elif field == "is_student":
+        hint = 'Hints: yes: "हाँ","हां","जी","हाँ जी". no: "नहीं","नही","ना".\n'
+    elif field == "choice":
+        hint = 'Hints: 1 synonyms: "एक","पहला". 2 synonyms: "दो","दू","दूसरा". 3 synonyms: "तीन","तीसरा".\n'
+
+    prompt = (
+        f"Field: {field}\n"
+        f"OPTIONS: {options}\n"
+        f"Language: {lang_name}\n"
+        f"{hint}"
+        f"Text: {text}\n"
+        "Return JSON now."
+    )
+
+    out = ollama_chat(
+        [{"role": "system", "content": sys}, {"role": "user", "content": prompt}]
+    )
+    data = _safe_json_loads(out) or {}
+
+    val = data.get("value", None)
+    conf = data.get("confidence", 0.0)
+    try:
+        conf = float(conf)
+    except Exception:
+        conf = 0.0
+
+    if val not in options:
+        val = None
+
+    return {"value": val, "confidence": conf}
+
+
+
+
 # ----------------------------
 # MAIN
 # ----------------------------
@@ -232,25 +329,44 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
     memory.setdefault("last_results", None)       # ranked = [(r,e,tag), ...]
     memory.setdefault("selected_scheme", None)
 
+    # --- trace setup (per turn) ---
+    trace = _trace_reset(memory)
+    trace.append(f"stage={memory.get('stage')}")
+
+    def set_stage(s: str):
+        memory["stage"] = s
+        trace.append(f"stage={s}")
+
+    def ret(text: str):
+        _trace_finalize(memory)
+        return (text, memory)
+
     profile = memory["profile"]
     user_text = normalize_hi(user_text)
 
     # store initial goal early (only during intake/collection)
     if memory["goal"] is None and memory["stage"] in ["INTAKE", "PROFILE_COLLECTION"]:
         memory["goal"] = user_text
+        trace.append("goal=set")
 
     # 1) pending confirm has highest priority
     if memory["pending_confirm"]:
         pc = memory["pending_confirm"]
         t = user_text.lower()
+
         if "हाँ" in t or "हा" in t or "जी" in t or "yes" in t:
             profile[pc["field"]] = pc["new"]
             memory["pending_confirm"] = None
-            return ("ठीक है, मैंने अपडेट कर दिया।", memory)
+            trace.append(f"pending_confirm=yes field={pc['field']}")
+            return ret("ठीक है, मैंने अपडेट कर दिया।")
+
         if "नहीं" in t or "मत" in t or "no" in t:
             memory["pending_confirm"] = None
-            return ("ठीक है, मैं पहले वाला मान ही रखूँगा।", memory)
-        return ("कृपया सिर्फ 'हाँ' या 'नहीं' में बताइए।", memory)
+            trace.append(f"pending_confirm=no field={pc['field']}")
+            return ret("ठीक है, मैं पहले वाला मान ही रखूँगा।")
+
+        trace.append("pending_confirm=unclear")
+        return ret("कृपया सिर्फ 'हाँ' या 'नहीं' में बताइए।")
 
     # ------------------------------------------------------------------
     # STEP-5: selection + submit flow (stage handlers)
@@ -258,30 +374,37 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
 
     # If user already submitted, still allow picking another scheme
     if memory.get("stage") == "DONE":
-        memory["stage"] = "RECOMMEND"  # reuse the same handler
+        set_stage("RECOMMEND")
 
     # --- Handle submit confirmation stage ---
     if memory.get("stage") == "CONFIRM_SUBMIT":
         memory["expected_field"] = None  # prevent profile prompts here
         yn = parse_yes_no(user_text)
+        trace.append("confirm_submit=seen")
+
         if yn is None:
-            return ("क्या आप आवेदन सबमिट करना चाहते हैं? (हाँ/नहीं)", memory)
+            trace.append("confirm_submit=ask_yes_no")
+            return ret("क्या आप आवेदन सबमिट करना चाहते हैं? (हाँ/नहीं)")
 
         if yn is False:
-            memory["stage"] = "RECOMMEND"
-            return ("ठीक है। आप किस योजना की जानकारी चाहते हैं? (1/2/3)", memory)
+            set_stage("RECOMMEND")
+            trace.append("confirm_submit=no")
+            return ret("ठीक है। आप किस योजना की जानकारी चाहते हैं? (1/2/3)")
 
+        # yn True -> submit
         selected = memory.get("selected_scheme")
         if not selected:
-            memory["stage"] = "RECOMMEND"
-            return ("मुझे आपकी चुनी हुई योजना नहीं मिल रही। कृपया 1/2/3 चुनिए।", memory)
+            set_stage("RECOMMEND")
+            trace.append("confirm_submit=yes_but_no_selected_scheme")
+            return ret("मुझे आपकी चुनी हुई योजना नहीं मिल रही। कृपया 1/2/3 चुनिए।")
 
+        trace.append("tool=submit_application")
         tracking_id = save_application(profile, selected)
-        memory["stage"] = "DONE"
-        return (
+        trace.append(f"tracking_id={tracking_id}")
+        set_stage("DONE")
+        return ret(
             f"✅ आपका आवेदन सबमिट कर दिया गया है। ट्रैकिंग आईडी: {tracking_id}\n"
-            "आप चाहें तो दूसरी योजना भी देख सकते हैं (1/2/3)।",
-            memory
+            "आप चाहें तो दूसरी योजना भी देख सकते हैं (1/2/3)।"
         )
 
     # --- Handle scheme selection stage ---
@@ -291,15 +414,26 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
         ranked = memory.get("last_results")  # [(r,e,tag), ...]
         if not ranked:
             # if nothing stored, fall back to recompute recommendations
-            memory["stage"] = "READY"
+            set_stage("READY")
+            trace.append("recommend=no_cached_results_fallback_ready")
         else:
             choice = parse_choice(user_text, max_n=min(3, len(ranked)))
+
+            # Canonical forced-choice fallback for selection
+            if choice is None:
+                res = llm_classify_enum(user_text, "choice", [1, 2, 3], lang_name)
+                if res["confidence"] >= 0.6 and res["value"]:
+                    choice = int(res["value"])
+
             if choice is None:
                 return ("कृपया 1/2/3 में से चुनिए।", memory)
 
+
             r, e, tag = ranked[choice - 1]
             memory["selected_scheme"] = r
-            memory["stage"] = "CONFIRM_SUBMIT"
+            set_stage("CONFIRM_SUBMIT")
+            trace.append(f"select={choice}")
+            trace.append(f"selected_scheme={r.get('scheme_id')}")
 
             docs = r.get("documents_hi", [])
             docs_text = " , ".join(docs) if docs else "दस्तावेज़ जानकारी उपलब्ध नहीं"
@@ -310,7 +444,7 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
                 f"- जरूरी दस्तावेज़: {docs_text}\n\n"
                 "क्या आप इस योजना के लिए आवेदन सबमिट करना चाहते हैं? (हाँ/नहीं)"
             )
-            return (reply, memory)
+            return ret(reply)
 
     # ------------------------------------------------------------------
     # PROFILE COLLECTION (deterministic parsing)
@@ -339,11 +473,24 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
         if v: extracted["gender"] = v
 
     # If expected field not parsed, ask again (NO LLM fallback)
+    # if not extracted and ef is not None:
+    #     trace.append(f"parse_failed expected_field={ef}")
+    #     trace.append(f"ask_field={ef}")
+    #     return ret(ask_for_field(ef))
+    
+    # If expected field not parsed, try canonical forced-choice fallback
     if not extracted and ef is not None:
-        return (ask_for_field(ef), memory)
+        # try LLM constrained classifier for only that field
+        extra2 = canonical_fallback_for_expected_field(user_text, ef, lang_name)
+        if extra2:
+            extracted.update(extra2)
+        else:
+            return (ask_for_field(ef), memory)
+
 
     # If ef is None, allow optional LLM extraction (validated hard)
     if not extracted and ef is None:
+        trace.append("tool=llm_extract_profile")
         llm_data = llm_extract_profile(user_text, lang_name) or {}
 
         if "state" in llm_data:
@@ -375,50 +522,59 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
     for k, v in extracted.items():
         if k in profile and profile[k] != v:
             memory["pending_confirm"] = {"field": k, "old": profile[k], "new": v}
-            return (
+            trace.append(f"contradiction field={k} old={profile[k]} new={v}")
+            return ret(
                 f"आपने पहले {field_label(k)} {profile[k]} बताया था, अभी {v} कहा। "
-                f"क्या मैं {v} अपडेट कर दूँ? (हाँ/नहीं)",
-                memory
+                f"क्या मैं {v} अपडेट कर दूँ? (हाँ/नहीं)"
             )
 
+    if extracted:
+        trace.append(f"profile_update={','.join(extracted.keys())}")
     profile.update(extracted)
 
     # stage transition
     if memory["stage"] == "INTAKE":
-        memory["stage"] = "PROFILE_COLLECTION"
+        set_stage("PROFILE_COLLECTION")
 
     # ask required fields
     missing = [f for f in REQUIRED_FIELDS if f not in profile]
     if missing:
         memory["expected_field"] = missing[0]
-        return (ask_for_field(missing[0]), memory)
+        trace.append(f"ask_field={missing[0]}")
+        return ret(ask_for_field(missing[0]))
 
     # ------------------------------------------------------------------
     # RECOMMENDATION
     # ------------------------------------------------------------------
-    memory["stage"] = "READY"
+    set_stage("READY")
     memory["expected_field"] = None
 
     if search_schemes is None:
-        return ("आपकी जानकारी मिल गई। अभी retriever tool सेट नहीं है।", memory)
+        trace.append("retriever=missing")
+        return ret("आपकी जानकारी मिल गई। अभी retriever tool सेट नहीं है।")
 
     query = rewrite_query(memory.get("goal") or user_text)
+    trace.append(f"tool=retriever(query={query}, top_k=3)")
     results = search_schemes(query, top_k=3)
+    trace.append(f"retriever.results={len(results)}")
 
     if not results:
-        return ("मुझे अभी कोई उपयुक्त योजना नहीं मिली। आप किस तरह की मदद चाहते हैं (शिक्षा/स्वास्थ्य/घर/नौकरी)?", memory)
+        return ret("मुझे अभी कोई उपयुक्त योजना नहीं मिली। आप किस तरह की मदद चाहते हैं (शिक्षा/स्वास्थ्य/घर/नौकरी)?")
 
     msg = "आपके लिए ये योजनाएँ उपयोगी हो सकती हैं:\n"
     ranked = []
 
     for r in results:
+        trace.append(f"tool=eligibility({r['scheme_id']})")
         e = check_eligibility(r["scheme_id"], profile)
+
         if e["status"] == "eligible":
             tag = "✅ पात्र"
         elif e["status"] == "not_eligible":
             tag = "❌ पात्र नहीं"
         else:
             tag = "⚠️ जानकारी चाहिए"
+
         ranked.append((r, e, tag))
 
     for i, (r, e, tag) in enumerate(ranked, 1):
@@ -433,11 +589,13 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
     if top_missing:
         mfield = top_missing[0]
         memory["expected_field"] = mfield
-        memory["stage"] = "PROFILE_COLLECTION"
+        set_stage("PROFILE_COLLECTION")
         memory["last_results"] = ranked
-        return (f"इस योजना की पात्रता जांचने के लिए एक सवाल: {ask_for_field(mfield)}", memory)
+        trace.append(f"eligibility.top_missing={mfield}")
+        trace.append(f"ask_field={mfield}")
+        return ret(f"इस योजना की पात्रता जांचने के लिए एक सवाल: {ask_for_field(mfield)}")
 
     msg += "\nआप किस योजना की आवेदन प्रक्रिया जानना चाहते हैं? (1/2/3)"
-    memory["stage"] = "RECOMMEND"
+    set_stage("RECOMMEND")
     memory["last_results"] = ranked
-    return (msg, memory)
+    return ret(msg)

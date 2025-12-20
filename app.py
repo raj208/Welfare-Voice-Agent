@@ -25,7 +25,8 @@ def pairs_to_messages(pairs):
 def voice_turn(audio_file, lang_key, chat_pairs, agent_mem):
     # If mic is empty/cleared, do nothing (prevents crashes)
     if not audio_file:
-        return pairs_to_messages(chat_pairs), None, "", "", chat_pairs, agent_mem
+        trace_text = (agent_mem or {}).get("last_trace", "")
+        return pairs_to_messages(chat_pairs), None, "", "", trace_text, chat_pairs, agent_mem
 
     lang_code, lang_name = LANGS[lang_key]
 
@@ -34,16 +35,18 @@ def voice_turn(audio_file, lang_key, chat_pairs, agent_mem):
     if not user_text:
         bot_text = "मैं आपकी आवाज़ ठीक से नहीं सुन पाया। कृपया फिर से बोलिए।"
         audio_out = tts_to_file(bot_text, "hi")
-        return pairs_to_messages(chat_pairs), audio_out, user_text, bot_text, chat_pairs, agent_mem
+        trace_text = (agent_mem or {}).get("last_trace", "")
+        return pairs_to_messages(chat_pairs), audio_out, user_text, bot_text, trace_text, chat_pairs, agent_mem
 
     # 2) AGENT
     bot_text, agent_mem = process_turn(user_text, lang_name, agent_mem)
+    trace_text = (agent_mem or {}).get("last_trace", "")
 
     # 3) TTS
     audio_out = tts_to_file(bot_text, lang_code)
 
     chat_pairs = chat_pairs + [(user_text, bot_text)]
-    return pairs_to_messages(chat_pairs), audio_out, user_text, bot_text, chat_pairs, agent_mem
+    return pairs_to_messages(chat_pairs), audio_out, user_text, bot_text, trace_text, chat_pairs, agent_mem
 
 
 with gr.Blocks(title="Voice Welfare Agent - Step 2") as demo:
@@ -58,17 +61,22 @@ with gr.Blocks(title="Voice Welfare Agent - Step 2") as demo:
     dbg_user = gr.Textbox(label="STT Text (debug)", interactive=False)
     dbg_bot = gr.Textbox(label="Assistant Text (debug)", interactive=False)
 
+    # ✅ Create this BEFORE using it in outputs
+    dbg_trace = gr.Textbox(label="Tool/State Trace (debug)", interactive=False)
+
     state = gr.State([])  # list of (user, bot)
     agent_state = gr.State({"stage": "INTAKE", "profile": {}, "pending_confirm": None})
 
     send_btn = gr.Button("Send / Process")
 
-    # ✅ ONLY ONE trigger (button). No audio_in.change at all.
+    # ✅ ONLY ONE trigger (button)
     send_btn.click(
         fn=voice_turn,
         inputs=[audio_in, lang_key, state, agent_state],
-        outputs=[chat, audio_out, dbg_user, dbg_bot, state, agent_state],
+        outputs=[chat, audio_out, dbg_user, dbg_bot, dbg_trace, state, agent_state]
     ).then(lambda: None, outputs=audio_in)  # clear mic so record button reappears
+
+demo.launch()
 
 
 
@@ -128,4 +136,3 @@ with gr.Blocks(title="Voice Welfare Agent - Step 2") as demo:
 
 
 
-demo.launch()

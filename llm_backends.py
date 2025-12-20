@@ -1,8 +1,11 @@
 import os
 import requests
 
-OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("LLM_MODEL", "llama3.2:3b")
+# OLLAMA_HOST = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
+# OLLAMA_MODEL = os.getenv("LLM_MODEL", "llama3.2:3b")
+
+OLLAMA_BASE = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:latest")  # ✅ your installed model
 
 def _messages_to_prompt(messages):
     # Convert chat messages to a single prompt for /api/generate fallback
@@ -17,43 +20,30 @@ def _messages_to_prompt(messages):
 def _post(url, payload, timeout=120):
     return requests.post(url, json=payload, timeout=timeout)
 
-def ollama_chat(messages):
-    """
-    Tries, in order:
-      1) Native Ollama chat: POST /api/chat
-      2) OpenAI-compatible: POST /v1/chat/completions
-      3) Fallback completion: POST /api/generate
-    """
-    # 1) Native Ollama /api/chat
-    r = _post(
-        f"{OLLAMA_HOST}/api/chat",
-        {"model": OLLAMA_MODEL, "messages": messages, "stream": False},
-    )
 
-    if r.status_code != 404:
+def ollama_chat(messages, model=OLLAMA_MODEL, timeout=120):
+    # 1) Ollama native chat
+    try:
+        r = requests.post(
+            f"{OLLAMA_BASE}/api/chat",
+            json={"model": model, "messages": messages, "stream": False},
+            timeout=timeout,
+        )
         r.raise_for_status()
         data = r.json()
-        # Expected native shape: {"message": {"role": "assistant", "content": "..."}}
-        return data["message"]["content"]
+        return data.get("message", {}).get("content", "")
+    except Exception:
+        pass
 
-    # 2) OpenAI compatible /v1/chat/completions
-    r2 = _post(
-        f"{OLLAMA_HOST}/v1/chat/completions",
-        {"model": OLLAMA_MODEL, "messages": messages, "stream": False},
+    # 2) OpenAI-compatible chat fallback
+    r = requests.post(
+        f"{OLLAMA_BASE}/v1/chat/completions",
+        json={"model": model, "messages": messages, "stream": False},
+        timeout=timeout,
     )
-    if r2.ok:
-        data = r2.json()
-        return data["choices"][0]["message"]["content"]
-
-    # 3) Fallback /api/generate
-    prompt = _messages_to_prompt(messages)
-    r3 = _post(
-        f"{OLLAMA_HOST}/api/generate",
-        {"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-    )
-    r3.raise_for_status()
-    data = r3.json()
-    return data["response"]
+    r.raise_for_status()
+    data = r.json()
+    return data["choices"][0]["message"]["content"]
 
 def generate_reply(user_text: str, history: list, language_name: str) -> str:
     system_prompt = (

@@ -1,0 +1,28 @@
+{
+  "pmjay": {
+    "required_fields": ["state"],
+    "rules": [
+      {"field": "annual_income", "op": "<=", "value": 250000, "explain_hi": "आय ₹2.5 लाख या कम होनी चाहिए (डेमो नियम)।"}
+    ]
+  },
+  "nsp": {
+    "required_fields": ["state", "age"],
+    "rules": [
+      {"field": "age", "op": "<=", "value": 30, "explain_hi": "छात्रवृत्ति के लिए उम्र आमतौर पर सीमित होती है (डेमो नियम: 30 या कम)।"},
+      {"field": "is_student", "op": "==", "value": true, "explain_hi": "आप छात्र/छात्रा हैं या नहीं, यह जरूरी है।"}
+    ]
+  },
+  "pmuy": {
+    "required_fields": ["state"],
+    "rules": [
+      {"field": "gender", "op": "==", "value": "female", "explain_hi": "यह योजना मुख्य रूप से महिलाओं के लिए है।"}
+    ]
+  },
+  "pmsby": {
+    "required_fields": ["age"],
+    "rules": [
+      {"field": "age", "op": ">=", "value": 18, "explain_hi": "उम्र 18+ होनी चाहिए।"},
+      {"field": "age", "op": "<=", "value": 70, "explain_hi": "उम्र 70 या कम होनी चाहिए।"}
+    ]
+  }
+}
