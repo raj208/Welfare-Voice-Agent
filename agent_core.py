@@ -343,6 +343,47 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
 
     profile = memory["profile"]
     user_text = normalize_hi(user_text)
+    def detect_inline_profile_update(text: str):
+        upd = {}
+
+        # age update
+        if ("उम्र" in text) or ("साल" in text):
+            a = parse_age(text)
+            if a is not None:
+                upd["age"] = a
+
+        # income update
+        if ("आय" in text) or ("कमाई" in text) or ("लाख" in text) or ("₹" in text) or ("रुप" in text):
+            inc = parse_income(text)
+            if inc is not None:
+                upd["annual_income"] = inc
+
+        # category update
+        if ("श्रेणी" in text) or ("कैटेगरी" in text) or ("ओबीसी" in text) or ("एससी" in text) or ("एसटी" in text) or ("ईडब्ल्यूएस" in text) or ("जनरल" in text) or ("सामान्य" in text):
+            c = parse_category(text)
+            if c:
+                upd["category"] = c
+
+        # gender update
+        if ("लिंग" in text) or ("महिला" in text) or ("पुरुष" in text):
+            g = parse_gender(text)
+            if g:
+                upd["gender"] = g
+
+        # student update
+        if ("छात्र" in text) or ("स्टूडेंट" in text):
+            yn = parse_yes_no(text)
+            if yn is not None:
+                upd["is_student"] = yn
+
+        # state update (only if strong hint words exist)
+        if ("राज्य" in text) or ("में रहता" in text) or ("से हूँ" in text) or ("से हूं" in text):
+            st = parse_state(text)
+            if st:
+                upd["state"] = st
+
+        return upd
+
 
     # store initial goal early (only during intake/collection)
     if memory["goal"] is None and memory["stage"] in ["INTAKE", "PROFILE_COLLECTION"]:
@@ -367,6 +408,30 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
 
         trace.append("pending_confirm=unclear")
         return ret("कृपया सिर्फ 'हाँ' या 'नहीं' में बताइए।")
+    
+# ✅ Interrupt: allow profile updates in ANY stage (RECOMMEND / CONFIRM_SUBMIT too)
+    inline_updates = detect_inline_profile_update(user_text)
+
+    if inline_updates:
+        trace.append(f"inline_update_detected={','.join(inline_updates.keys())}")
+
+        # contradiction check first
+        for k, v in inline_updates.items():
+            if k in profile and profile[k] != v:
+                memory["pending_confirm"] = {"field": k, "old": profile[k], "new": v}
+                trace.append(f"contradiction field={k} old={profile[k]} new={v}")
+                return ret(
+                    f"आपने पहले {field_label(k)} {profile[k]} बताया था, अभी {v} कहा। "
+                    f"क्या मैं {v} अपडेट कर दूँ? (हाँ/नहीं)"
+                )
+
+        # no contradiction → apply update
+        profile.update(inline_updates)
+        trace.append("inline_update_applied")
+
+        # after update, recompute recommendations
+        memory["expected_field"] = None
+        set_stage("READY")
 
     # ------------------------------------------------------------------
     # STEP-5: selection + submit flow (stage handlers)
@@ -426,7 +491,9 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
                     choice = int(res["value"])
 
             if choice is None:
-                return ("कृपया 1/2/3 में से चुनिए।", memory)
+                trace.append("select=invalid")
+                return ret("कृपया 1/2/3 में से चुनिए।")
+
 
 
             r, e, tag = ranked[choice - 1]
@@ -485,7 +552,10 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
         if extra2:
             extracted.update(extra2)
         else:
-            return (ask_for_field(ef), memory)
+            trace.append(f"parse_failed expected_field={ef}")
+            trace.append(f"ask_field={ef}")
+            return ret(ask_for_field(ef))
+
 
 
     # If ef is None, allow optional LLM extraction (validated hard)
