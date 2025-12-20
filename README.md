@@ -10,7 +10,7 @@
 
 [cite_start]The **Voice Welfare Agent** is a voice-first AI system designed to help users find and apply for government welfare schemes entirely through a native Indian language (Hindi)[cite: 3].
 
-[cite_start]Unlike simple chatbots, this system operates as an **autonomous agent** with a deterministic state machine[cite: 29]. [cite_start]It listens to user queries, manages conversation memory across turns, actively detects contradictions in user inputs, and utilizes external tools to retrieve schemes, check eligibility rules, and simulate application submissions[cite: 4, 5].
+Unlike simple chatbots, this system operates as an **autonomous agent** with a deterministic state machine. It listens to user queries, manages conversation memory across turns, actively detects contradictions in user inputs, and utilizes external tools to retrieve schemes, check eligibility rules, and simulate application submissions.
 
 ---
 
