@@ -105,7 +105,7 @@ It may also ask **only when needed by eligibility rules**:
 
 ### Prerequisites
 * Python 3.9+
-* [cite_start]FFmpeg (required for audio processing via faster-whisper) [cite: 91]
+* FFmpeg (required for audio processing via faster-whisper)
 
 ### 1. Clone the repository
 ```bash```
