@@ -30,7 +30,7 @@ Unlike simple chatbots, this system operates as an **autonomous agent** with a d
 
 ---
 
-## ✅ Implemented Features
+## ✅ Implemented Features 
 
 ### Voice + Multilingual UI
 - Mic recording input via Gradio
@@ -109,7 +109,7 @@ It may also ask **only when needed by eligibility rules**:
 
 ### 1. Clone the repository
 ```bash```
-git clone [https://github.com/yourusername/voice-welfare-agent.git](https://github.com/yourusername/voice-welfare-agent.git)
+git clone [https://github.com/raj208/voice-welfare-agent.git](https://github.com/raj208/voice-welfare-agent.git)
 cd voice-welfare-agent
 
 
