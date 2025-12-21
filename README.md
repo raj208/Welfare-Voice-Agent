@@ -179,3 +179,45 @@ pip install -r requirements.txt
 ### 4. Run the Application
 ```bash```
 python app.py
+
+
+## Gradio UI — How to Use
+
+After starting the server, you will see the Gradio web interface.
+
+
+
+### 1) Record and Send Voice
+<img src="images/gradio_ui.png" alt="Record" width="300">
+<img src="images/send_button.png" alt="Send" width="150">
+
+- Click the **Microphone / Record** button and speak your query (Hindi supported).
+- Stop recording and click **Send / Submit**.
+- The system converts your voice → text (STT) and replies back in chat + audio.
+
+### 2) Chat + Audio Reply
+- Your conversation appears in the **Chat window**.
+- The agent also generates an **audio response** (TTS) that you can play in the UI.
+
+### 3) Debug View (Recommended)
+The UI provides debug panels to make the agent transparent:
+- **STT Text:** shows the transcribed text from your voice input.
+- **Tool/State Trace:** shows the agent stage flow (e.g., `READY → retriever → eligibility → RECOMMEND`).
+This helps you understand *why* the agent asked a question or called a tool.
+
+### 4) Profile Collection & Confirmation
+- The agent may ask for missing details like **state, age, income, category**.
+- If you provide conflicting information (e.g., age changes), it triggers a **confirmation step** (Yes/No) before updating the profile.
+
+### 5) Memory (Conversation Stored Across Turns)
+- The agent maintains **persistent memory** across turns:
+  - user goal / intent  
+  - filled profile fields  
+  - selected scheme + last results  
+  - last tool/state trace  
+- This allows multi-step conversations like: *find scheme → check eligibility → select → submit*.
+
+### 6) Getting Recommendations + Applying
+- The agent recommends the **top schemes** (usually top 3).
+- You select using **1/2/3**.
+- On confirmation, it submits using the application tool and returns a **tracking ID**.
