@@ -188,8 +188,8 @@ After starting the server, you will see the Gradio web interface.
 
 
 ### 1) Record and Send Voice
-<img src="images/gradio_ui.png" alt="Record" width="300">
-<img src="images/send_button.png" alt="Send" width="150">
+<img src="images/gradio_ui.png" alt="Record" width="500">
+<img src="images/send_button.png" alt="Send" width="500">
 
 - Click the **Microphone / Record** button and speak your query (Hindi supported).
 - Stop recording and click **Send / Submit**.
