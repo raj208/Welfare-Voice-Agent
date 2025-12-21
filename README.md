@@ -196,14 +196,22 @@ After starting the server, you will see the Gradio web interface.
 - The system converts your voice → text (STT) and replies back in chat + audio.
 
 ### 2) Chat + Audio Reply
+<img src="images/chat.png" alt="chat" width="700">
+
 - Your conversation appears in the **Chat window**.
 - The agent also generates an **audio response** (TTS) that you can play in the UI.
 
+
+
 ### 3) Debug View (Recommended)
+
+<img src="images/debug.png" alt="debug" width="700">
 The UI provides debug panels to make the agent transparent:
 - **STT Text:** shows the transcribed text from your voice input.
 - **Tool/State Trace:** shows the agent stage flow (e.g., `READY → retriever → eligibility → RECOMMEND`).
 This helps you understand *why* the agent asked a question or called a tool.
+
+
 
 ### 4) Profile Collection & Confirmation
 - The agent may ask for missing details like **state, age, income, category**.
