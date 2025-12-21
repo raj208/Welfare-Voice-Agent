@@ -14,6 +14,50 @@ Unlike simple chatbots, this system operates as an **autonomous agent** with a d
 
 ---
 
+## Architecture
+
+![Architecure summary ](images/pipeline.png)
+
+The Voice Welfare Agent is a voice-first Hindi AI system that helps users find and apply for government welfare schemes through a multi-step conversation. It goes beyond a chatbot by using an explicit state machine, tool calls, persistent memory, contradiction handling, and failure recovery.
+
+
+### Agent Lifecycle (State Machine)
+
+![Aegent  LifeCycle ](images/agent_lifecycle.png)
+The agent follows these stages:
+INTAKE → PROFILE_COLLECTION → READY → RECOMMEND → CONFIRM_SUBMIT → DONE
+A special PENDING_CONFIRM state is triggered when the user gives contradictory info (e.g., age changes), and the agent asks confirmation before updating memory.
+
+
+
+### Decision Routing (process_turn priority logic)
+![Decision Routing ](images/decision.png)
+
+Each turn is routed with clear priority:
+- If a pending confirmation exists → parse yes/no → update/keep old value → continue.
+- Else route by current stage (e.g., parse choice 1/2/3 in RECOMMEND, parse yes/no in CONFIRM_SUBMIT).
+- During profile collection, the agent uses expected_field to deterministically parse only the required field; if parsing fails it re-asks or uses a constrained fallback.
+
+### Prompting + Tool Strategy (Deterministic-first)
+
+![Prompting and tools  ](images/prompting.png)
+
+Most logic is deterministic (normalization, parsing, routing, contradiction checks).
+LLM usage is constrained (forced-choice canonical classifier) and accepted only above a confidence threshold; otherwise the agent asks again. Tools are executed after the profile is ready and results are stored for multi-step selection + submission.
+
+
+
+### Memory (Persistent Across Turns)
+The memory dictionary stores:
+- stage, goal
+- profile (state, age, income, category, optional gender/is_student)
+- expected_field (prevents free-text drift)
+- pending_confirm {field, old, new} (contradiction resolver)
+- last_results, selected_scheme
+- last_trace (tool/state trace for debugging)
+
+
+
 ## ✨ What this project does
 
 **End-to-end pipeline:**
