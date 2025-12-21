@@ -226,6 +226,10 @@ This helps you understand *why* the agent asked a question or called a tool.
 - This allows multi-step conversations like: *find scheme → check eligibility → select → submit*.
 
 ### 6) Getting Recommendations + Applying
+<img src="images/scheme.png" alt="scheme" width="700">
+
 - The agent recommends the **top schemes** (usually top 3).
 - You select using **1/2/3**.
+
+<img src="images/apply.png" alt="apply" width="700">
 - On confirmation, it submits using the application tool and returns a **tracking ID**.
