@@ -639,7 +639,7 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
     msg = "आपके लिए ये योजनाएँ उपयोगी हो सकती हैं:\n"
     ranked = []
 
-    any_stale_or_uncertain = False
+    any_stale = False
     for r in results:
         trace.append(f"tool=eligibility({r['scheme_id']})")
         e = check_eligibility(r["scheme_id"], profile, scheme_data=r)
@@ -652,7 +652,7 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
             tag = "⚠️ जानकारी चाहिए"
 
         if r.get("is_stale", True):
-            any_stale_or_uncertain = True
+            any_stale = True
         ranked.append((r, e, tag))
 
     for i, (r, e, tag) in enumerate(ranked, 1):
@@ -693,7 +693,7 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
         trace.append(f"ask_field={mfield}")
         return ret(f"इस योजना की पात्रता जांचने के लिए एक सवाल: {ask_for_field(mfield)}")
 
-    if any_stale_or_uncertain:
+    if any_stale:
         msg += "\n⚠️ कुछ ऑनलाइन जानकारी पुरानी/अपूर्ण हो सकती है, आवेदन से पहले आधिकारिक पोर्टल पर सत्यापित करें।\n"
 
     msg += "\nआप किस योजना की आवेदन प्रक्रिया जानना चाहते हैं? (1/2/3)"

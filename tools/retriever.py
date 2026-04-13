@@ -1,4 +1,5 @@
 import json
+import warnings
 from pathlib import Path
 
 DATA_PATH = Path("data/schemes.jsonl")
@@ -19,6 +20,9 @@ def _lazy_imports():
         from sentence_transformers import SentenceTransformer
         return np, faiss, SentenceTransformer
     except Exception:
+        warnings.warn(
+            "Optional semantic-search dependencies unavailable (numpy/faiss/sentence-transformers); using lexical fallback."
+        )
         return None, None, None
 
 

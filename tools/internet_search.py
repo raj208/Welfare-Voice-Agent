@@ -9,12 +9,13 @@ import requests
 
 CACHE_PATH = Path("data/scheme_enrichment_cache.json")
 CACHE_TTL_DAYS = 14
-STALE_WARNING_DAYS = 45
+STALE_DATA_THRESHOLD_DAYS = 45
 HTTP_USER_AGENT = "WelfareVoiceAgent/1.0"
 HIGH_CONFIDENCE_WITH_CONTENT = 0.85
 LOW_CONFIDENCE_SPARSE_CONTENT = 0.55
 HYBRID_CONFIDENCE_WEIGHT = 0.15
 HYBRID_FRESHNESS_BONUS = 0.03
+DATE_PATTERN = r"[0-9]{1,2}[/-][0-9]{1,2}[/-][0-9]{2,4}"
 
 TRUSTED_DOMAINS = {
     "india.gov.in",
@@ -131,9 +132,9 @@ def _extract_points(text: str, keywords, max_points=4):
 
 def _extract_last_updated(text: str) -> str:
     patterns = [
-        r"(last\s+updated\s*[:\-]?\s*[0-9]{1,2}[\-/][0-9]{1,2}[\-/][0-9]{2,4})",
-        r"(updated\s+on\s*[:\-]?\s*[0-9]{1,2}[\-/][0-9]{1,2}[\-/][0-9]{2,4})",
-        r"(अद्यतन\s*[:\-]?\s*[0-9]{1,2}[\-/][0-9]{1,2}[\-/][0-9]{2,4})",
+        rf"(last\s+updated\s*[:\-]?\s*{DATE_PATTERN})",
+        rf"(updated\s+on\s*[:\-]?\s*{DATE_PATTERN})",
+        rf"(अद्यतन\s*[:\-]?\s*{DATE_PATTERN})",
     ]
     low = text.lower()
     for p in patterns:
@@ -202,13 +203,15 @@ def fetch_scheme_details_from_internet(
                     "apply_link": final_url,
                     "source_url": final_url,
                     "source_confidence": (
-                        HIGH_CONFIDENCE_WITH_CONTENT if (eligibility or benefits) else LOW_CONFIDENCE_SPARSE_CONTENT
+                        HIGH_CONFIDENCE_WITH_CONTENT
+                        if (len(eligibility) > 0 or len(benefits) > 0)
+                        else LOW_CONFIDENCE_SPARSE_CONTENT
                     ),
                     "last_updated_date": _extract_last_updated(text),
                     "fetch_status": "ok",
                 }
             )
-            payload["is_stale"] = _is_stale(payload.get("fetched_at"), STALE_WARNING_DAYS)
+            payload["is_stale"] = _is_stale(payload.get("fetched_at"), STALE_DATA_THRESHOLD_DAYS)
             payload["freshness_note_hi"] = (
                 "डेटा अपेक्षाकृत नया है, फिर भी आवेदन से पहले आधिकारिक पोर्टल देखें।"
                 if not payload["is_stale"]
@@ -235,7 +238,7 @@ def get_cached_scheme_enrichment(
         fetched_at = cached.get("fetched_at")
         if fetched_at and not _is_stale(fetched_at, CACHE_TTL_DAYS):
             cached["cache_hit"] = True
-            cached["is_stale"] = _is_stale(fetched_at, STALE_WARNING_DAYS)
+            cached["is_stale"] = _is_stale(fetched_at, STALE_DATA_THRESHOLD_DAYS)
             if cached.get("is_stale"):
                 cached["freshness_note_hi"] = "कैश डेटा पुराना हो सकता है, कृपया आधिकारिक पोर्टल पर सत्यापित करें।"
             return cached

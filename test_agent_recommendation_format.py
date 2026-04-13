@@ -45,6 +45,8 @@ class AgentRecommendationFormatTests(unittest.TestCase):
         self.assertEqual(mem["stage"], "RECOMMEND")
         self.assertIn("आधिकारिक स्रोत", text)
         self.assertIn("कारण", text)
+        self.assertIn("jansuraksha.gov.in", text)
+        self.assertIn("आवेदन लिंक", text)
 
 
 if __name__ == "__main__":
