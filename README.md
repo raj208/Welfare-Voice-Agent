@@ -103,9 +103,10 @@ If user changes a known value (e.g., age 20 → 21), agent asks:
 - YES → update profile
 - NO → keep old value
 
-### Tools (3 total)
-- **Retriever tool:** `search_schemes(query, top_k=3)`
-- **Eligibility tool:** `check_eligibility(scheme_id, profile)`
+### Tools (4 total)
+- **Retriever tool:** `search_schemes(query, top_k=3)` (hybrid local + optional internet enrichment)
+- **Internet enrichment tool:** `tools/internet_search.py` (official-source fetch + cache + freshness)
+- **Eligibility tool:** `check_eligibility(scheme_id, profile)` with detailed reason blocks
 - **Submit tool:** `save_application(profile, scheme)` → returns `tracking_id`
 
 ### Failure Handling
@@ -139,8 +140,16 @@ It may also ask **only when needed by eligibility rules**:
   - ✅ eligible
   - ❌ not eligible
   - ⚠️ unknown / missing info
+- Adds detailed reasons (matched/failed/missing checks) and source evidence
+- Shows official source/apply link and freshness warning when internet data may be stale
 - User selects scheme (1/2/3) → sees apply steps + documents
 - User confirms submit (हाँ/नहीं) → tracking id is generated
+
+### Internet-enriched recommendations (trusted sources only)
+- The agent enriches top local matches from trusted government portals only.
+- Allowed domains are whitelisted in `tools/internet_search.py`.
+- Enriched scheme data is cached in `data/scheme_enrichment_cache.json` to avoid repeated fetches.
+- If internet fetch fails, trust checks fail, or data is stale, the agent falls back to local data and shows a verification disclaimer.
 
 ---
 

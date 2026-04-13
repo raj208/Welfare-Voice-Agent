@@ -638,9 +638,10 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
     msg = "आपके लिए ये योजनाएँ उपयोगी हो सकती हैं:\n"
     ranked = []
 
+    any_stale_or_uncertain = False
     for r in results:
         trace.append(f"tool=eligibility({r['scheme_id']})")
-        e = check_eligibility(r["scheme_id"], profile)
+        e = check_eligibility(r["scheme_id"], profile, scheme_data=r)
 
         if e["status"] == "eligible":
             tag = "✅ पात्र"
@@ -649,15 +650,37 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
         else:
             tag = "⚠️ जानकारी चाहिए"
 
+        if r.get("is_stale", True):
+            any_stale_or_uncertain = True
         ranked.append((r, e, tag))
 
     for i, (r, e, tag) in enumerate(ranked, 1):
         msg += f"\n{i}) {r['name_hi']} {tag}\n"
         msg += f"   - {r['summary_hi']}\n"
-        if e.get("checks"):
+        reason_blocks = e.get("reason_blocks", [])
+        shown = 0
+        for rb in reason_blocks:
+            if rb.get("status") in ["failed", "missing", "matched"] and rb.get("reason_hi"):
+                msg += f"   - कारण: {rb['reason_hi']}\n"
+                shown += 1
+            if shown >= 2:
+                break
+        if shown == 0 and e.get("checks"):
             first = e["checks"][0]
             if first.get("explain_hi"):
                 msg += f"   - कारण: {first['explain_hi']}\n"
+
+        missing_fields = e.get("missing_fields", [])
+        if missing_fields:
+            miss_txt = ", ".join(field_label(f) for f in missing_fields)
+            msg += f"   - और जानकारी चाहिए: {miss_txt}\n"
+
+        if r.get("source_url"):
+            msg += f"   - आधिकारिक स्रोत: {r.get('source_url')}\n"
+        if r.get("apply_link"):
+            msg += f"   - आवेदन लिंक: {r.get('apply_link')}\n"
+        if r.get("freshness_note_hi"):
+            msg += f"   - नोट: {r.get('freshness_note_hi')}\n"
 
     top_missing = ranked[0][1].get("missing_fields", []) if ranked else []
     if top_missing:
@@ -668,6 +691,9 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
         trace.append(f"eligibility.top_missing={mfield}")
         trace.append(f"ask_field={mfield}")
         return ret(f"इस योजना की पात्रता जांचने के लिए एक सवाल: {ask_for_field(mfield)}")
+
+    if any_stale_or_uncertain:
+        msg += "\n⚠️ कुछ ऑनलाइन जानकारी पुरानी/अपूर्ण हो सकती है, आवेदन से पहले आधिकारिक पोर्टल पर सत्यापित करें।\n"
 
     msg += "\nआप किस योजना की आवेदन प्रक्रिया जानना चाहते हैं? (1/2/3)"
     set_stage("RECOMMEND")
