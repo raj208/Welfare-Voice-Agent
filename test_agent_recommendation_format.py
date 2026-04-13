@@ -6,7 +6,8 @@ from agent_core import process_turn
 
 class AgentRecommendationFormatTests(unittest.TestCase):
     @patch("agent_core.search_schemes")
-    def test_recommendation_includes_source_and_reason_details(self, mock_search):
+    @patch("agent_core.llm_extract_profile", return_value={})
+    def test_recommendation_includes_source_and_reason_details(self, _mock_llm, mock_search):
         mock_search.return_value = [
             {
                 "scheme_id": "pmsby",
