@@ -1,4 +1,5 @@
 import unittest
+from urllib.parse import urlparse
 from unittest.mock import patch
 
 from tools.internet_search import fetch_scheme_details_from_internet, enrich_scheme_results
@@ -29,7 +30,7 @@ class InternetSearchTests(unittest.TestCase):
 
         out = fetch_scheme_details_from_internet("nsp", "NSP")
         self.assertEqual(out["fetch_status"], "ok")
-        self.assertTrue(out["source_url"].startswith("https://scholarships.gov.in"))
+        self.assertEqual(urlparse(out["source_url"]).netloc, "scholarships.gov.in")
         self.assertGreaterEqual(len(out["eligibility_points_hi"]), 1)
 
     @patch("tools.internet_search.requests.get", side_effect=Exception("network down"))

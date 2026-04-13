@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -9,6 +10,7 @@ import requests
 CACHE_PATH = Path("data/scheme_enrichment_cache.json")
 CACHE_TTL_DAYS = 14
 STALE_WARNING_DAYS = 45
+HTTP_USER_AGENT = "WelfareVoiceAgent/1.0"
 
 TRUSTED_DOMAINS = {
     "india.gov.in",
@@ -83,11 +85,30 @@ def _save_cache(cache: dict):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
+class _SafeHTMLTextExtractor(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._skip_stack = []
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in {"script", "style"}:
+            self._skip_stack.append(tag.lower())
+
+    def handle_endtag(self, tag):
+        if self._skip_stack and self._skip_stack[-1] == tag.lower():
+            self._skip_stack.pop()
+
+    def handle_data(self, data):
+        if not self._skip_stack and data:
+            self.parts.append(data)
+
+
 def _html_to_text(html: str) -> str:
-    text = re.sub(r"(?is)<(script|style).*?>.*?</\\1>", " ", html)
-    text = re.sub(r"(?s)<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    parser = _SafeHTMLTextExtractor()
+    parser.feed(html or "")
+    text = " ".join(parser.parts)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _extract_points(text: str, keywords, max_points=4):
@@ -151,7 +172,7 @@ def fetch_scheme_details_from_internet(
         payload["freshness_note_hi"] = "स्रोत भरोसेमंद नहीं है, इसलिए इंटरनेट डेटा का उपयोग नहीं किया गया।"
         return payload
 
-    headers = {"User-Agent": "WelfareVoiceAgent/1.0 (+https://github.com/raj208/Welfare-Voice-Agent)"}
+    headers = {"User-Agent": HTTP_USER_AGENT}
     last_err = None
     for _ in range(retries + 1):
         try:
