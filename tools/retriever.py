@@ -4,6 +4,8 @@ from pathlib import Path
 DATA_PATH = Path("data/schemes.jsonl")
 INDEX_PATH = Path("data/faiss.index")
 META_PATH = Path("data/meta.json")
+SEMANTIC_SEARCH_CONFIDENCE = 0.75
+LEXICAL_SEARCH_CONFIDENCE = 0.55
 
 _model = None
 _index = None
@@ -113,7 +115,7 @@ def _semantic_search(query_hi: str, top_k: int = 5):
                 "documents_hi": s.get("documents_hi", []),
                 "score": float(score),
                 "search_backend": "semantic",
-                "source_confidence": 0.75,
+                "source_confidence": SEMANTIC_SEARCH_CONFIDENCE,
             }
         )
     return results
@@ -152,7 +154,7 @@ def _lexical_search(query_hi: str, top_k: int = 5):
                     "documents_hi": s.get("documents_hi", []),
                     "score": float(score),
                     "search_backend": "lexical",
-                    "source_confidence": 0.55,
+                    "source_confidence": LEXICAL_SEARCH_CONFIDENCE,
                 }
             )
 

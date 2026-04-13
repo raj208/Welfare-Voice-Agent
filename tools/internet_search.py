@@ -11,6 +11,10 @@ CACHE_PATH = Path("data/scheme_enrichment_cache.json")
 CACHE_TTL_DAYS = 14
 STALE_WARNING_DAYS = 45
 HTTP_USER_AGENT = "WelfareVoiceAgent/1.0"
+HIGH_CONFIDENCE_WITH_CONTENT = 0.85
+LOW_CONFIDENCE_SPARSE_CONTENT = 0.55
+HYBRID_CONFIDENCE_WEIGHT = 0.15
+HYBRID_FRESHNESS_BONUS = 0.03
 
 TRUSTED_DOMAINS = {
     "india.gov.in",
@@ -197,7 +201,9 @@ def fetch_scheme_details_from_internet(
                     "apply_guidance_hi": " ".join(apply_points).strip(),
                     "apply_link": final_url,
                     "source_url": final_url,
-                    "source_confidence": 0.85 if (eligibility or benefits) else 0.55,
+                    "source_confidence": (
+                        HIGH_CONFIDENCE_WITH_CONTENT if (eligibility or benefits) else LOW_CONFIDENCE_SPARSE_CONTENT
+                    ),
                     "last_updated_date": _extract_last_updated(text),
                     "fetch_status": "ok",
                 }
@@ -277,8 +283,8 @@ def enrich_scheme_results(local_results, use_internet: bool = True, internet_top
 
         base = float(result.get("score", 0.0))
         conf = float(result.get("source_confidence", 0.5))
-        fresh_bonus = 0.03 if not result.get("is_stale", True) else 0.0
-        result["hybrid_score"] = base + (0.15 * conf) + fresh_bonus
+        fresh_bonus = HYBRID_FRESHNESS_BONUS if not result.get("is_stale", True) else 0.0
+        result["hybrid_score"] = base + (HYBRID_CONFIDENCE_WEIGHT * conf) + fresh_bonus
         merged.append(result)
 
     merged.sort(key=lambda x: x.get("hybrid_score", x.get("score", 0.0)), reverse=True)

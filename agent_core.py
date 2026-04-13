@@ -26,6 +26,7 @@ except Exception:
 # REQUIRED_FIELDS = ["state", "age", "annual_income", "category"]
 REQUIRED_FIELDS = ["state", "age", "annual_income", "category", "is_student", "gender"]
 ALLOWED_CATEGORIES = {"sc", "st", "obc", "general", "ews"}
+MAX_REASON_BLOCKS_DISPLAYED = 2
 
 # ----------------------------
 # Normalization (STT fixes)
@@ -663,7 +664,7 @@ def process_turn(user_text: str, lang_name: str, memory: dict):
             if rb.get("status") in ["failed", "missing", "matched"] and rb.get("reason_hi"):
                 msg += f"   - कारण: {rb['reason_hi']}\n"
                 shown += 1
-            if shown >= 2:
+            if shown >= MAX_REASON_BLOCKS_DISPLAYED:
                 break
         if shown == 0 and e.get("checks"):
             first = e["checks"][0]
